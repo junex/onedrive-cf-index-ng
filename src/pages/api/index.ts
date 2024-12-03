@@ -12,6 +12,9 @@ import { NextRequest, NextResponse } from 'next/server'
 export const runtime = 'edge'
 
 const basePath = pathPosix.resolve('/', siteConfig.baseDirectory)
+const allowedDirectories = siteConfig.allowedDirectories
+  ? siteConfig.allowedDirectories.split(',').map(dir => dir.trim()).filter(Boolean)
+  : []
 const clientSecret = revealObfuscatedToken(apiConfig.obfuscatedClientSecret)
 
 /**
@@ -242,6 +245,16 @@ export default async function handler(req: NextRequest): Promise<Response> {
           ...(sort ? { $orderby: sort } : {}),
         },
       })
+
+      // 添加根目录过滤逻辑
+      if (isRoot) {
+        // 只在 allowedDirectories 不为空时进行过滤
+        folderData.value = allowedDirectories.length > 0
+          ? folderData.value.filter(item => 
+              allowedDirectories.includes(item.name.toLowerCase())
+            )
+          : folderData.value;
+      }
 
       // Extract next page token from full @odata.nextLink
       const nextPage = folderData['@odata.nextLink']
