@@ -70,18 +70,23 @@ export default async function handler(req: NextRequest): Promise<Response> {
         }
       }))
 
+      console.log('初始搜索结果数量:', processedResults.length)
+      console.log('允许的目录列表:', allowedDirectories)
+
       // 根据 allowedDirectories 过滤结果
       if (allowedDirectories.length > 0) {
         // 预处理 allowedDirectories，使用 encodePath 处理每个目录
-        const processedAllowedDirs = allowedDirectories.map(dir => 
-          encodePath(dir).toLowerCase()
-        );
+        const processedAllowedDirs = allowedDirectories.map(dir => {
+          const encoded = `/drive/root:/${encodeURIComponent(dir)}`.toLowerCase()
+          return encoded
+        });
 
         processedResults = processedResults.filter(item => {
-          // 检查文件路径是否在允许的目录下
-          return processedAllowedDirs.some(allowedDir => 
-            item.path.toLowerCase().includes(allowedDir)
+          const itemPath = item.path.toLowerCase()
+          const isAllowed = processedAllowedDirs.some(allowedDir => 
+            itemPath.includes(allowedDir)
           );
+          return isAllowed
         });
       }
 

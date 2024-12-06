@@ -249,11 +249,19 @@ export default async function handler(req: NextRequest): Promise<Response> {
 
       // 添加根目录过滤逻辑
       if (isRoot) {
+        // 预处理 allowedDirectories，使用编码处理每个目录
+        const processedAllowedDirs = allowedDirectories.map(dir => {
+          const encoded = `/drive/root:/${encodeURIComponent(dir)}`.toLowerCase()
+          return encoded
+        });
+
         // 只在 allowedDirectories 不为空时进行过滤
         folderData.value = allowedDirectories.length > 0
-          ? folderData.value.filter(item => 
-              allowedDirectories.includes(item.name.toLowerCase())
-            )
+          ? folderData.value.filter(item => {
+              // 获取完整的项目路径
+              const itemPath = `/drive/root:/${encodeURIComponent(item.name)}`.toLowerCase()
+              return processedAllowedDirs.includes(itemPath)
+            })
           : folderData.value;
       }
 
