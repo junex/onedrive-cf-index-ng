@@ -7,14 +7,12 @@ import siteConfig from '../../../config/site.config'
 import { getAuthPersonInfo, revealObfuscatedToken } from '../../utils/oAuthHandler'
 import { compareHashedToken } from '../../utils/protectedRouteHandler'
 import { getOdAuthTokens, storeOdAuthTokens } from '../../utils/odAuthTokenStore'
+import { getKVConfig } from '../../utils/kvConfigStore'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'edge'
 
 const basePath = pathPosix.resolve('/', siteConfig.baseDirectory)
-const allowedDirectories = siteConfig.allowedDirectories
-  ? siteConfig.allowedDirectories.split(',').map(dir => dir.trim()).filter(Boolean)
-  : []
 const clientSecret = revealObfuscatedToken(apiConfig.obfuscatedClientSecret)
 
 /**
@@ -245,6 +243,9 @@ export default async function handler(req: NextRequest): Promise<Response> {
           ...(sort ? { $orderby: sort } : {}),
         },
       })
+
+      // 获取动态配置
+      const { allowedDirectories } = await getKVConfig();
 
       // 添加根目录过滤逻辑
       if (isRoot) {
