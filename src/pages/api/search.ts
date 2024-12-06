@@ -5,6 +5,8 @@ import { encodePath, getAccessToken } from '.'
 import apiConfig from '../../../config/api.config'
 import siteConfig from '../../../config/site.config'
 import { NextRequest, NextResponse } from 'next/server'
+import { getKVConfig } from '../../utils/kvConfigStore'
+import { OdSearchResult } from '../../types'
 
 export const runtime = 'edge'
 
@@ -31,6 +33,7 @@ function sanitiseQuery(query: string): string {
 export default async function handler(req: NextRequest): Promise<Response> {
   // Get access token from storage
   const accessToken = await getAccessToken()
+  const { allowedDirectories } = await getKVConfig()
 
   // Query parameter from request
   const { q: searchQuery = '' } = Object.fromEntries(req.nextUrl.searchParams)
@@ -52,7 +55,37 @@ export default async function handler(req: NextRequest): Promise<Response> {
           top: siteConfig.maxItems,
         },
       })
-      return NextResponse.json(data.value)
+      
+      // 解析和处理搜索结果
+      let processedResults: OdSearchResult = data.value.map(item => ({
+        id: item.id,
+        name: item.name,
+        file: item.file,
+        folder: item.folder,
+        path: item.parentReference.path,
+        parentReference: {
+          id: item.parentReference.id,
+          name: item.parentReference.name,
+          path: item.parentReference.path
+        }
+      }))
+
+      // 根据 allowedDirectories 过滤结果
+      if (allowedDirectories.length > 0) {
+        // 预处理 allowedDirectories，使用 encodePath 处理每个目录
+        const processedAllowedDirs = allowedDirectories.map(dir => 
+          encodePath(dir).toLowerCase()
+        );
+
+        processedResults = processedResults.filter(item => {
+          // 检查文件路径是否在允许的目录下
+          return processedAllowedDirs.some(allowedDir => 
+            item.path.toLowerCase().includes(allowedDir)
+          );
+        });
+      }
+
+      return NextResponse.json(processedResults)
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error?.response?.data ?? 'Internal server error.' }), {
         status: error?.response?.status ?? 500,
