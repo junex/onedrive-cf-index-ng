@@ -60,8 +60,8 @@ export async function getAccessToken(): Promise<string> {
 
   const resp = await axios.post(apiConfig.authApi, body, {
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
   })
 
   if ('access_token' in resp.data && 'refresh_token' in resp.data) {
@@ -69,7 +69,7 @@ export async function getAccessToken(): Promise<string> {
     await storeOdAuthTokens({
       accessToken: access_token,
       accessTokenExpiry: parseInt(expires_in),
-      refreshToken: refresh_token,
+      refreshToken: refresh_token
     })
     console.log('Fetch new access token with stored refresh token.')
     return access_token
@@ -130,8 +130,8 @@ export async function checkAuthRoute(
     const token = await axios.get(`${apiConfig.driveApi}/root${encodePath(authTokenPath)}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       params: {
-        select: '@microsoft.graph.downloadUrl,file',
-      },
+        select: '@microsoft.graph.downloadUrl,file'
+      }
     })
 
     // Handle request and check for header 'od-protected-token'
@@ -141,7 +141,7 @@ export async function checkAuthRoute(
     if (
       !compareHashedToken({
         odTokenHeader: odTokenHeader,
-        dotPassword: odProtectedToken.data.toString(),
+        dotPassword: odProtectedToken.data.toString()
       })
     ) {
       return { code: 401, message: 'Password required.' }
@@ -149,7 +149,7 @@ export async function checkAuthRoute(
   } catch (error: any) {
     // Password file not found, fallback to 404
     if (error?.response?.status === 404) {
-      return { code: 404, message: "You didn't set a password." }
+      return { code: 404, message: 'You didn\'t set a password.' }
     } else {
       return { code: 500, message: 'Internal server error.' }
     }
@@ -170,11 +170,11 @@ export default async function handler(req: NextRequest): Promise<Response> {
     // verify identity of the authenticated user with the Microsoft Graph API
     const { data, status } = await getAuthPersonInfo(accessToken)
     if (status !== 200) {
-      return new Response("Non-200 response from Microsoft Graph API", { status: 500 })
+      return new Response('Non-200 response from Microsoft Graph API', { status: 500 })
     }
 
     if (data.userPrincipalName !== siteConfig.userPrincipalName) {
-      return new Response("Do not pretend to be the owner!", { status: 403 })
+      return new Response('Do not pretend to be the owner!', { status: 403 })
     }
 
     await storeOdAuthTokens({ accessToken, accessTokenExpiry, refreshToken })
@@ -210,7 +210,10 @@ export default async function handler(req: NextRequest): Promise<Response> {
   }
 
   // Handle protected routes authentication
-  const { code, message } = await checkAuthRoute(cleanPath, accessToken, req.headers.get('od-protected-token') as string)
+  const {
+    code,
+    message
+  } = await checkAuthRoute(cleanPath, accessToken, req.headers.get('od-protected-token') as string)
   // Status code other than 200 means user has not authenticated yet
   if (code !== 200) {
     return new Response(JSON.stringify({ error: message }), { status: code })
@@ -222,13 +225,34 @@ export default async function handler(req: NextRequest): Promise<Response> {
   // Whether path is root, which requires some special treatment
   const isRoot = requestPath === ''
 
+  // 获取动态配置
+  const { allowedDirectories, hiddenDirectories } = await getKVConfig()
+
+  // 添加根目录过滤逻辑
+  const processedAllowedDirs = allowedDirectories.map(dir =>
+    encodeURIComponent(dir)
+  )
+  const processedHiddenDirs = hiddenDirectories.map(dir =>
+    encodeURIComponent(dir)
+  )
+
+  if (!isRoot && allowedDirectories.length > 0) {
+    const pathSegments = cleanPath.split('/').filter(Boolean)
+    const firstDir = pathSegments.length > 0 ? pathSegments[0] : ''
+    if (!processedAllowedDirs.some(dir =>
+      encodeURIComponent(firstDir) == dir
+    )) {
+      throw new Error('没有权限')
+    }
+  }
+
   // Querying current path identity (file or folder) and follow up query childrens in folder
   try {
     const { data: identityData } = await axios.get(requestUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
       params: {
-        select: 'name,size,id,lastModifiedDateTime,folder,file,video,image',
-      },
+        select: 'name,size,id,lastModifiedDateTime,folder,file,video,image'
+      }
     })
 
     if ('folder' in identityData) {
@@ -237,32 +261,30 @@ export default async function handler(req: NextRequest): Promise<Response> {
         params: {
           ...{
             select: 'name,size,id,lastModifiedDateTime,folder,file,video,image',
-            $top: siteConfig.maxItems,
+            $top: siteConfig.maxItems
           },
           ...(next ? { $skipToken: next } : {}),
-          ...(sort ? { $orderby: sort } : {}),
-        },
+          ...(sort ? { $orderby: sort } : {})
+        }
       })
 
-      // 获取动态配置
-      const { allowedDirectories } = await getKVConfig();
-
-      // 添加根目录过滤逻辑
       if (isRoot) {
-        // 预处理 allowedDirectories，使用编码处理每个目录
-        const processedAllowedDirs = allowedDirectories.map(dir => {
-          const encoded = `/drive/root:/${encodeURIComponent(dir)}`.toLowerCase()
-          return encoded
-        });
-
         // 只在 allowedDirectories 不为空时进行过滤
         folderData.value = allowedDirectories.length > 0
-          ? folderData.value.filter(item => {
-              // 获取完整的项目路径
-              const itemPath = `/drive/root:/${encodeURIComponent(item.name)}`.toLowerCase()
-              return processedAllowedDirs.includes(itemPath)
-            })
-          : folderData.value;
+          ? folderData.value.filter(item =>
+            processedAllowedDirs.some(dir =>
+              dir == encodeURIComponent(item.name)
+            )
+          )
+          : folderData.value
+
+        folderData.value = hiddenDirectories.length > 0
+          ? folderData.value.filter(item =>
+            !processedHiddenDirs.some(dir =>
+              dir == encodeURIComponent(item.name)
+            )
+          )
+          : folderData.value
       }
 
       // Extract next page token from full @odata.nextLink
@@ -280,7 +302,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ file: identityData })
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error?.response?.data ?? 'Internal server error.' }), {
-      status: error?.response?.code ?? 500,
+      status: error?.response?.code ?? 500
     })
   }
 }

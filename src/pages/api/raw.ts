@@ -4,6 +4,7 @@ import axios from 'redaxios'
 import { driveApi, cacheControlHeader } from '../../../config/api.config'
 import { encodePath, getAccessToken, checkAuthRoute } from '.'
 import { NextRequest } from 'next/server'
+import { getKVConfig } from '../../utils/kvConfigStore'
 
 export const runtime = 'edge'
 
@@ -45,6 +46,24 @@ export default async function handler(req: NextRequest): Promise<Response> {
   if (message !== '') {
     headers['Cache-Control'] = 'no-cache'
   }
+  const { allowedDirectories, hiddenDirectories } = await getKVConfig();
+  // 添加根目录过滤逻辑
+  const processedAllowedDirs = allowedDirectories.map(dir =>
+    encodeURIComponent(dir)
+  )
+  const processedHiddenDirs = hiddenDirectories.map(dir =>
+    encodeURIComponent(dir)
+  )
+
+  if (allowedDirectories.length > 0) {
+    const pathSegments = cleanPath.split('/').filter(Boolean)
+    const firstDir = pathSegments.length > 0 ? pathSegments[0] : ''
+    if (!processedAllowedDirs.some(dir =>
+      encodeURIComponent(firstDir) == dir
+    )) {
+      throw new Error('没有权限')
+    }
+  }
 
   try {
     // Handle response from OneDrive API
@@ -71,7 +90,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
         return new Response()
       } else {
         headers['Location'] = data['@microsoft.graph.downloadUrl'] as string
-        return new Response(null, { status: 302, headers: headers})
+        return new Response(null, { status: 302, headers: headers })
       }
     } else {
       return new Response(JSON.stringify({ error: 'No download url found.' }), { status: 404, headers: headers })
