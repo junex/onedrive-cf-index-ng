@@ -4,6 +4,7 @@ import axios from 'redaxios'
 import { driveApi, cacheControlHeader } from '../../../config/api.config'
 import { encodePath, getAccessToken, checkAuthRoute } from '.'
 import { NextRequest } from 'next/server'
+import { getKVConfig } from '../../utils/kvConfigStore'
 
 export const runtime = 'edge'
 
@@ -47,8 +48,21 @@ export default async function handler(req: NextRequest): Promise<Response> {
   }
 
   try {
+    const { allowedDirectories, hiddenDirectories } = await getKVConfig();
     // Handle response from OneDrive API
     const requestUrl = `${driveApi}/root${encodePath(cleanPath)}`
+    // 根据 allowedDirectories 过滤结果
+    if (allowedDirectories.length > 0) {
+      // 预处理 allowedDirectories，使用 encodePath 处理每个目录
+      const processedAllowedDirs = allowedDirectories.map(dir =>
+        `:/${encodeURIComponent(dir)}`.toLowerCase()
+      );
+      const isAllowed = processedAllowedDirs.some(allowedDir =>
+        encodePath(cleanPath).includes(allowedDir)
+      );
+      if (!isAllowed) throw new Error('Access denied.')
+    }
+
     const { data } = await axios.get(requestUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
       params: {
@@ -71,7 +85,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
         return new Response()
       } else {
         headers['Location'] = data['@microsoft.graph.downloadUrl'] as string
-        return new Response(null, { status: 302, headers: headers})
+        return new Response(null, { status: 302, headers: headers })
       }
     } else {
       return new Response(JSON.stringify({ error: 'No download url found.' }), { status: 404, headers: headers })

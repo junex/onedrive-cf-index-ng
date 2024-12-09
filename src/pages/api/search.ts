@@ -33,7 +33,7 @@ function sanitiseQuery(query: string): string {
 export default async function handler(req: NextRequest): Promise<Response> {
   // Get access token from storage
   const accessToken = await getAccessToken()
-  const { allowedDirectories } = await getKVConfig()
+  const { allowedDirectories, hiddenDirectories } = await getKVConfig()
 
   // Query parameter from request
   const { q: searchQuery = '' } = Object.fromEntries(req.nextUrl.searchParams)
@@ -55,7 +55,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
           top: siteConfig.maxItems,
         },
       })
-      
+
       // 解析和处理搜索结果
       let processedResults: OdSearchResult = data.value.map(item => ({
         id: item.id,
@@ -70,23 +70,34 @@ export default async function handler(req: NextRequest): Promise<Response> {
         }
       }))
 
-      console.log('初始搜索结果数量:', processedResults.length)
-      console.log('允许的目录列表:', allowedDirectories)
 
       // 根据 allowedDirectories 过滤结果
       if (allowedDirectories.length > 0) {
         // 预处理 allowedDirectories，使用 encodePath 处理每个目录
-        const processedAllowedDirs = allowedDirectories.map(dir => {
-          const encoded = `/drive/root:/${encodeURIComponent(dir)}`.toLowerCase()
-          return encoded
-        });
+        const processedAllowedDirs = allowedDirectories.map(dir =>
+          `/drive/root:/${encodeURIComponent(dir)}`.toLowerCase()
+        );
 
         processedResults = processedResults.filter(item => {
-          const itemPath = item.path.toLowerCase()
-          const isAllowed = processedAllowedDirs.some(allowedDir => 
-            itemPath.includes(allowedDir)
+          console.log('encodedPath:', (item.path))
+          return processedAllowedDirs.some(allowedDir =>{
+            return encodePath(item.path).toLowerCase().includes(allowedDir)
+
+            item.path.toLowerCase().includes(allowedDir)
+          }
           );
-          return isAllowed
+        });
+      }
+      // 根据 hiddenDirectories 过滤结果
+      if (allowedDirectories.length > 0) {
+        const processedHiddenDirs = hiddenDirectories.map(dir =>
+          `/drive/root:/${encodeURIComponent(dir)}`.toLowerCase()
+        );
+
+        processedResults = processedResults.filter(item => {
+          !processedHiddenDirs.some(hiddenDir =>
+            item.path.toLowerCase().includes(hiddenDir)
+          );
         });
       }
 
